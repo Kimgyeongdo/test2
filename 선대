@@ -1,0 +1,217 @@
+import sys
+
+def inputEquations():
+    print("=" * 40)
+    print("3x3 연립방정식 Ax = b 입력")
+    print("=" * 40)
+    
+    A = []
+    for i in range(3):
+        while True:
+            try:
+                row_str = input(f"A 행렬 {i+1}행 (3개 숫자 공백/쉼표 구분): ")
+                row = [float(x.strip()) for x in row_str.replace(',', ' ').split() if x.strip()]
+                if len(row) != 3: raise ValueError
+                A.append(row)
+                break
+            except ValueError:
+                print("오류: 3개의 숫자를 정확히 입력해주세요.")
+    
+    b = []
+    print("-" * 40)
+    for i in range(3):
+        while True:
+            try:
+                val = input(f"b 벡터 {i+1}번째 원소: ")
+                b.append(float(val.strip()))
+                break
+            except ValueError:
+                print("오류: 숫자를 입력해주세요.")
+                
+    return A, b
+
+def gaussianElimination(A, b):
+    M = [row[:] + [bx] for row, bx in zip(A, b)]
+    rows, cols = 3, 4
+    pivot_row = 0
+
+    for j in range(3):
+        if pivot_row >= rows: break
+
+        max_val, max_row = 0, -1
+        for i in range(pivot_row, rows):
+            if abs(M[i][j]) > max_val:
+                max_val = abs(M[i][j])
+                max_row = i
+        
+        if max_val < 1e-9: continue
+
+        M[pivot_row], M[max_row] = M[max_row], M[pivot_row]
+
+        pivot = M[pivot_row][j]
+        for i in range(pivot_row + 1, rows):
+            factor = M[i][j] / pivot
+            for k in range(j, cols):
+                M[i][k] -= factor * M[pivot_row][k]
+                if abs(M[i][k]) < 1e-9: M[i][k] = 0.0
+        
+        pivot_row += 1
+
+    pivots = []
+    for i in range(rows):
+        for j in range(3):
+            if abs(M[i][j]) > 1e-9:
+                pivots.append((i, j))
+                pivot_val = M[i][j]
+                for k in range(j, cols):
+                    M[i][k] /= pivot_val
+                break
+    
+    for i, j in reversed(pivots):
+        for row_idx in range(i):
+            factor = M[row_idx][j]
+            for k in range(j, cols):
+                M[row_idx][k] -= factor * M[i][k]
+
+    return M
+
+def luDecomposition(A):
+    n = 3
+    L = [[0.0] * n for _ in range(n)]
+    U = [[0.0] * n for _ in range(n)]
+
+    for i in range(n):
+        for k in range(i, n):
+            sum_val = 0
+            for j in range(i):
+                sum_val += (L[i][j] * U[j][k])
+            U[i][k] = A[i][k] - sum_val
+
+        for k in range(i, n):
+            if i == k:
+                L[i][i] = 1.0
+            else:
+                sum_val = 0
+                for j in range(i):
+                    sum_val += (L[k][j] * U[j][i])
+                if abs(U[i][i]) < 1e-9:
+                    return None, None
+                L[k][i] = (A[k][i] - sum_val) / U[i][i]
+                
+    return L, U
+
+def forwardSubstitution(L, b):
+    n = len(b)
+    y = [0.0] * n
+    for i in range(n):
+        sum_val = sum(L[i][j] * y[j] for j in range(i))
+        y[i] = (b[i] - sum_val) / L[i][i]
+    return y
+
+def backSubstitution(U, y):
+    n = len(y)
+    x = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        sum_val = sum(U[i][j] * x[j] for j in range(i + 1, n))
+        if abs(U[i][i]) < 1e-9:
+            raise ValueError("Singular Matrix")
+        x[i] = (y[i] - sum_val) / U[i][i]
+    return x
+
+def checkSolutionType(A, b):
+    M_rref = gaussianElimination(A, b)
+    
+    rank_A = 0
+    rank_Aug = 0
+    
+    for i in range(3):
+        row_all_zeros = True
+        row_A_zeros = True
+        
+        for j in range(3):
+            if abs(M_rref[i][j]) > 1e-9:
+                row_A_zeros = False
+                row_all_zeros = False
+                break
+        
+        if abs(M_rref[i][3]) > 1e-9:
+            row_all_zeros = False
+            
+        if not row_A_zeros: rank_A += 1
+        if not row_all_zeros: rank_Aug += 1
+        
+    if rank_A < rank_Aug:
+        return "None", M_rref
+    elif rank_A == rank_Aug:
+        if rank_A == 3:
+            return "Unique", M_rref
+        else:
+            return "Infinite", M_rref
+    return "None", M_rref
+
+def freeVariables(M_rref):
+    num_vars = 3
+    pivot_cols = []
+    for i in range(3):
+        for j in range(3):
+            if abs(M_rref[i][j]) > 1e-9:
+                pivot_cols.append(j)
+                break
+                
+    free_vars = [j for j in range(3) if j not in pivot_cols]
+    solution_strs = []
+    
+    t_map = {idx: f"t{i+1}" for i, idx in enumerate(free_vars)}
+    
+    print("\n[해의 일반형]")
+    for i in range(3):
+        if i in free_vars:
+            print(f"x{i+1} = {t_map[i]} (자유 변수)")
+        else:
+            row_idx = -1
+            for r in range(3):
+                if abs(M_rref[r][i]) > 1e-9:
+                    row_idx = r
+                    break
+            
+            if row_idx != -1:
+                expr = f"{M_rref[row_idx][3]:.4f}"
+                for free_idx in free_vars:
+                    coeff = -M_rref[row_idx][free_idx]
+                    if abs(coeff) > 1e-9:
+                        term = f" {coeff:+.4f}*{t_map[free_idx]}"
+                        expr += term
+                print(f"x{i+1} = {expr}")
+
+def main():
+    A, b = inputEquations()
+    
+    sol_type, M_ref = checkSolutionType(A, b)
+    
+    print("\n" + "#" * 40)
+    print(f"분석 결과: {sol_type} Solution")
+    print("#" * 40)
+    
+    if sol_type == "Unique":
+        print("\n[방법: LU 분해 (LU Decomposition)]")
+        L, U = luDecomposition(A)
+        if L is None: 
+            print("LU 분해 중 피벗 0 발생. 가우스 소거법 결과로 대체합니다.")
+            x_vals = [row[3] for row in M_ref]
+        else:
+            y = forwardSubstitution(L, b)
+            x_vals = backSubstitution(U, y)
+            
+        print(f"x1 = {x_vals[0]:.4f}")
+        print(f"x2 = {x_vals[1]:.4f}")
+        print(f"x3 = {x_vals[2]:.4f}")
+        
+    elif sol_type == "Infinite":
+        print("\n[방법: 가우스 소거법 & 자유 변수 해석]")
+        freeVariables(M_ref)
+        
+    elif sol_type == "None":
+        print("\n모순 발생. 해가 존재하지 않습니다.")
+
+if __name__ == "__main__":
+    main()
